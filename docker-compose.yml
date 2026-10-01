@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # 1. Local PostgreSQL Database initialized with database.sql
+  postgres:
+    image: postgres:15-alpine
+    container_name: cocos_postgres_local
+    environment:
+      POSTGRES_DB: ${LOCAL_DB_NAME:-cocos_local}
+      POSTGRES_USER: ${LOCAL_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:-postgres}
+    ports:
+      - "${LOCAL_DB_PORT:-5432}:5432"
+    volumes:
+      - ./database/database.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - cocos_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cocos_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Database Web Visualizer (pgweb - Lightweight web GUI for PostgreSQL like RedisInsight)
+  pgweb:
+    image: sosedoff/pgweb:latest
+    container_name: cocos_pgweb
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/cocos_local?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # 3. Prometheus Metrics Collector (scrapes Spring Boot Actuator)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: cocos_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 4. Grafana Dashboards & Visualizations (auto-provisions Prometheus & PostgreSQL datasources)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: cocos_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - cocos_grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - postgres
+      - loki
+
+  # 5. Loki Log Aggregator
+  loki:
+    image: grafana/loki:latest
+    container_name: cocos_loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  # 6. Promtail Log Collector (ships Docker container logs to Loki)
+  promtail:
+    image: grafana/promtail:latest
+    container_name: cocos_promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./monitoring/promtail/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - loki
+
+  # 7. Backend Spring Boot API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cocos-challenge-api:latest
+    container_name: cocos_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-local}
+      - DB_URL=jdbc:postgresql://postgres:5432/cocos_local?sslmode=disable
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres
+    restart: unless-stopped
+
+volumes:
+  cocos_pgdata:
+  cocos_grafanadata:

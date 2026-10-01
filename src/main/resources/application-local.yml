@@ -1,0 +1,27 @@
+spring:
+  main:
+    banner-mode: "off"
+    log-startup-info: false
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/cocos_local?sslmode=disable}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    validate-on-migrate: false
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: none
+
+logging:
+  level:
+    root: ERROR
+    com.cocos.challenge: INFO
+    org.springframework: ERROR
+    org.hibernate: ERROR
+    com.zaxxer.hikari: ERROR
+    org.apache: ERROR
