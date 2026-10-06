@@ -1,67 +1,82 @@
 ### ===================================================================
 ### Cocos Capital - Backend Challenge API (REST Client)
-### Base URL: http://localhost:8080
+### Compatible con VS Code REST Client / IntelliJ HTTP Client
 ### ===================================================================
 
 @baseUrl = http://localhost:8080/api/v1
+@actuatorUrl = http://localhost:8080/actuator
 @userId = 1
+@ticker = GGAL
+@orderIdNew = 5
+@orderIdFilled = 1
 
-### 1. Health & Actuator Metrics
-GET http://localhost:8080/actuator/health
+### ===================================================================
+### 1. Observabilidad y Salud (Spring Boot Actuator)
+### ===================================================================
 
-### -------------------------------------------------------------------
-### 2. Portfolio Endpoints
-### -------------------------------------------------------------------
+### 1.1 Health Check (Verifica estado de la API y de PostgreSQL)
+GET {{actuatorUrl}}/health
+Accept: application/json
 
-### 2.1 Get User Portfolio (Query Parameter)
+### 1.2 Catálogo de Métricas
+GET {{actuatorUrl}}/metrics
+Accept: application/json
+
+### ===================================================================
+### 2. Portfolio del Usuario
+### ===================================================================
+
+### 2.1 Consultar Portfolio por Query Param (?userId=1)
 GET {{baseUrl}}/portfolio?userId={{userId}}
 Accept: application/json
 
-### 2.2 Get User Portfolio (Path Variable)
+### 2.2 Consultar Portfolio por Path Variable (/portfolio/1)
 GET {{baseUrl}}/portfolio/{{userId}}
 Accept: application/json
 
-### -------------------------------------------------------------------
-### 3. Instruments Search Endpoints
-### -------------------------------------------------------------------
+### ===================================================================
+### 3. Búsqueda y Paginación de Instrumentos
+### ===================================================================
 
-### 3.1 Search by Ticker (e.g. GGAL)
-GET {{baseUrl}}/instruments?query=GGAL&page=0&size=10
+### 3.1 Búsqueda por Ticker (ej. GGAL, PAMP, YPFD)
+GET {{baseUrl}}/instruments?query={{ticker}}&page=0&size=10
 Accept: application/json
 
-### 3.2 Search by Name (e.g. Galicia)
+### 3.2 Búsqueda por Nombre Parcial de la Empresa (ej. Galicia)
 GET {{baseUrl}}/instruments?query=Galicia&page=0&size=10
 Accept: application/json
 
-### 3.3 List All Instruments (Paginated)
+### 3.3 Listar Todos los Instrumentos Paginados y Ordenados
 GET {{baseUrl}}/instruments?page=0&size=20&sort=ticker,asc
 Accept: application/json
 
-### -------------------------------------------------------------------
-### 4. Orders Endpoints
-### -------------------------------------------------------------------
+### ===================================================================
+### 4. Envío y Gestión de Órdenes Financieras
+### ===================================================================
 
 ### 4.1 Enviar Orden MARKET BUY por Cantidad Exacta (Size)
+# Se ejecuta inmediatamente al precio actual de mercado (FILLED)
 POST {{baseUrl}}/orders
 Content-Type: application/json
 Idempotency-Key: {{$guid}}
 
 {
-  "userId": 1,
-  "ticker": "GGAL",
+  "userId": {{userId}},
+  "ticker": "{{ticker}}",
   "side": "BUY",
   "type": "MARKET",
   "size": 10
 }
 
-### 4.2 Enviar Orden LIMIT BUY por Cantidad Exacta (Size)
+### 4.2 Enviar Orden LIMIT BUY por Cantidad Exacta y Precio Límite
+# Queda en estado NEW y reserva availableCash hasta su ejecución o cancelación
 POST {{baseUrl}}/orders
 Content-Type: application/json
 Idempotency-Key: {{$guid}}
 
 {
-  "userId": 1,
-  "ticker": "GGAL",
+  "userId": {{userId}},
+  "ticker": "{{ticker}}",
   "side": "BUY",
   "type": "LIMIT",
   "price": 850.00,
@@ -69,36 +84,38 @@ Idempotency-Key: {{$guid}}
 }
 
 ### 4.3 Enviar Orden por Monto de Inversión en Pesos (Amount)
-### Calcula la cantidad de acciones máximas sin fracciones
+# El backend calcula automáticamente las acciones enteras máximas: floor(amount / price)
 POST {{baseUrl}}/orders
 Content-Type: application/json
 Idempotency-Key: {{$guid}}
 
 {
-  "userId": 1,
-  "ticker": "GGAL",
+  "userId": {{userId}},
+  "ticker": "{{ticker}}",
   "side": "BUY",
   "type": "MARKET",
-  "amount": 10000.00
+  "amount": 50000.00
 }
 
-### 4.4 Enviar Orden con Saldo Insuficiente (Genera REJECTED)
+### 4.4 Enviar Orden con Fondos Insuficientes (Evento Persistido como REJECTED)
+# Responde 200 OK con estado REJECTED para auditoría regulatoria
 POST {{baseUrl}}/orders
 Content-Type: application/json
 Idempotency-Key: {{$guid}}
 
 {
-  "userId": 1,
-  "ticker": "GGAL",
+  "userId": {{userId}},
+  "ticker": "{{ticker}}",
   "side": "BUY",
   "type": "MARKET",
-  "size": 1000000
+  "size": 999999
 }
 
-### 4.5 Cancelar una Orden en Estado NEW
-POST {{baseUrl}}/orders/5/cancel
+### 4.5 Cancelar una Orden Activa en Estado NEW
+# Cambia a CANCELLED y libera inmediatamente los fondos reservados
+POST {{baseUrl}}/orders/{{orderIdNew}}/cancel
 Accept: application/json
 
-### 4.6 Intentar Cancelar una Orden FILLED (Retorna 422 Problem Detail)
-POST {{baseUrl}}/orders/1/cancel
+### 4.6 Intentar Cancelar una Orden Liquidada FILLED (Retorna 422 Problem Detail)
+POST {{baseUrl}}/orders/{{orderIdFilled}}/cancel
 Accept: application/json

@@ -1,155 +1,170 @@
-# Cocos Challenge - Backend API
+# Cocos Capital — Backend Challenge API
 
-API REST para operaciones de mercado y gestión de portafolios desarrollada en Java 21 y Spring Boot 3.
-
----
-
-## Endpoints
-
-| Método | Endpoint | Descripción |
-| :--- | :--- | :--- |
-| `GET` | `/api/v1/portfolio?userId={id}` | Valuación total de la cuenta, efectivo disponible y posiciones abiertas con rendimiento diario y total. |
-| `GET` | `/api/v1/portfolio/{id}` | Mismo resultado que el anterior, accediendo por path variable. |
-| `GET` | `/api/v1/instruments?query={q}` | Búsqueda paginada de instrumentos por ticker o nombre, con cotización de cierre y retorno diario. |
-| `POST` | `/api/v1/orders` | Envío de órdenes (`MARKET` o `LIMIT`). Permite enviar `size` (acciones) o `amount` (pesos). Soporta `Idempotency-Key`. |
-| `POST` | `/api/v1/orders/{id}/cancel` | Cancelación de órdenes pendientes en estado `NEW`. |
+Solución del challenge técnico de backend para Cocos Capital. Desarrollada en **Java 21 (LTS)** y **Spring Boot 3.4**, con persistencia en **PostgreSQL**, migraciones versionadas con **Flyway** y observabilidad completa en contenedor (**Prometheus**, **Grafana**, **Loki**, **Promtail**).
 
 ---
 
-## Reglas de Negocio Implementadas
+## Ejecución Rápida con Docker
 
-### 1. Órdenes y Mercado
-- **Tipos de orden:**
-  - `MARKET`: Se ejecuta inmediatamente (`FILLED`) utilizando el último precio de cierre (`close`) de la tabla `marketdata`.
-  - `LIMIT`: Se registra con estado inicial `NEW`. Requiere indicar `price` límite.
-- **Cancelaciones:** Solo pueden cancelarse órdenes con estado `NEW`. Intentar cancelar una orden en otro estado (`FILLED`, `CANCELLED`, `REJECTED`) retorna error `422 Unprocessable Entity`.
-- **Cálculo de acciones por monto (`amount`):** Cuando el usuario especifica un importe en pesos en lugar de cantidad de acciones, el sistema calcula el entero máximo: `floor(amount / price)` (sin fracciones). Si el monto no alcanza para comprar al menos 1 acción, la orden se guarda rechazada (`REJECTED`).
-- **Validación de fondos y tenencias:**
-  - En compras (`BUY`), se valida que el efectivo disponible (descontando órdenes de compra `NEW` pendientes) cubra el total.
-  - En ventas (`SELL`), se valida que las acciones disponibles (descontando ventas `NEW` pendientes) cubran la cantidad a vender.
-  - Si no alcanza el saldo o las acciones, la orden se persiste en base de datos con estado `REJECTED` y motivo descriptivo.
+**Requisito único:** Docker Desktop / Docker Compose.
 
-### 2. Moneda y Movimientos de Efectivo
-- El efectivo (ARS) está modelado como instrumento de tipo `MONEDA`.
-- Los ingresos y egresos de dinero se procesan como órdenes con lados `CASH_IN` y `CASH_OUT`, actualizando el disponible.
-- Todos los cálculos monetarios se redondean a 2 decimales utilizando redondeo bancario (`RoundingMode.HALF_EVEN`).
-
-### 3. Valuación de Cartera
-- Las posiciones se computan a partir de las órdenes en estado `FILLED`.
-- **Precio promedio de compra:** Se calcula como el promedio ponderado de las compras históricas. Las ventas reducen la cantidad de acciones en tenencia sin modificar dicho promedio.
-- **Rendimientos:**
-  - Rendimiento diario: `((close - previousClose) / previousClose) * 100`
-  - Rendimiento total de la posición: `((marketPrice - averageCost) / averageCost) * 100`
-
-### 4. Idempotencia y Concurrencia
-- **Idempotencia:** El header opcional `Idempotency-Key` garantiza que reintentos de red con la misma clave devuelvan la orden original ya procesada sin duplicar movimientos.
-- **Concurrencia:** Bloqueo pesimista (`SELECT ... FOR UPDATE`) sobre el usuario para serializar transacciones concurrentes y evitar sobregiros de saldo.
-
----
-
-## Ejecución
-
-### Opción A: Levantar todo con Docker (Recomendado)
-El proyecto incluye un script bat para Windows que arranca la base de datos local, la API, el visor web de base de datos y la observabilidad:
-
-```cmd
-run-infra.bat
-```
-
-Servicios disponibles al iniciar:
-- **API REST:** http://localhost:8080
-- **Swagger / OpenAPI:** http://localhost:8080/swagger-ui.html
-- **pgweb (Visor de Base de Datos):** http://localhost:8081
-- **Grafana (Métricas y Logs):** http://localhost:3000 (usuario: `admin` / clave: `admin`)
-- **Prometheus:** http://localhost:9090
-
-Comandos adicionales del script:
-```cmd
-run-infra.bat infra     # Levanta solo infraestructura (DB, pgweb, Grafana, Loki) para correr la API desde el IDE
-run-infra.bat db        # Levanta únicamente PostgreSQL y pgweb
-run-infra.bat build     # Reconstruye las imágenes Docker
-run-infra.bat stop      # Detiene los contenedores
-```
-
-### Opción B: Ejecutar API localmente
-Para correr la aplicación desde la terminal o IDE:
 ```bash
-# Con base de datos local (requiere PostgreSQL en localhost:5432 o via run-infra.bat infra):
-mvn spring-boot:run -Dspring-boot.run.profiles=local
-
-# Con base remota NeonDB:
-mvn spring-boot:run -Dspring-boot.run.profiles=neon
+docker compose up --build -d
 ```
+
+Una vez que los contenedores estén levantados:
+
+| Servicio | URL / Acceso | Detalle |
+| :--- | :--- | :--- |
+| **API REST** | `http://localhost:8080` | Entrypoint principal de la aplicación |
+| **Swagger UI** | `http://localhost:8080/swagger-ui/index.html` | Documentación OpenAPI interactiva |
+| **Health Check** | `http://localhost:8080/actuator/health` | Estado del servicio y conexión a BD |
+| **PostgreSQL** | `localhost:5432` | Usuario/Password: `postgres` / `postgres` (DB: `cocos_local`) |
+| **pgweb** | `http://localhost:8081` | Interfaz web ligera para consultar PostgreSQL |
+| **Grafana** | `http://localhost:3000` | Dashboards y logs (User: `admin` / Pass: `admin`) |
+| **Prometheus** | `http://localhost:9090` | Métricas del sistema y del Actuator |
+
+> **Scripts de conveniencia:** Se incluyen scripts para gestionar todo el entorno con un solo comando:
+> - **macOS / Linux:** `./run-infra.sh` (ej. `./run-infra.sh` para levantar todo, `./run-infra.sh infra` para solo dependencias)
+> - **Windows:** `run-infra.bat` (ej. `run-infra.bat` para levantar todo, `run-infra.bat infra` para solo dependencias)
 
 ---
 
-## Pruebas Automatizadas
+## Decisiones de Diseño y Criterio Financiero
 
-El proyecto cuenta con 65 pruebas automatizadas (unitarias, funcionales con WebMvcTest e integración con Testcontainers PostgreSQL):
+### 1. La tabla `orders` como Ledger Contable (Proyección de Saldos)
+En este modelo no existe una tabla de "saldos" o "cuentas corrientes". El estado patrimonial del usuario es una **proyección derivada de la tabla `orders`**:
+* **`totalCash` (Efectivo contable/liquidado):** Suma neta de transferencias (`CASH_IN` / `CASH_OUT`) y operaciones efectivamente ejecutadas (`FILLED`). Este dinero sigue perteneciendo al usuario.
+* **`availableCash` (Poder de compra real):** Descuenta las **reservas comprometidas en órdenes vivas**:
+  $$\text{availableCash} = \text{totalCash} - \sum (\text{BUY en estado NEW}: \text{size} \times \text{price})$$
+  Si un usuario tiene $1.000.000 y coloca una orden `LIMIT BUY` por $200.000 que queda en `NEW`, su patrimonio sigue siendo de $1.000.000, pero su disponible para emitir nuevas órdenes baja a $800.000.
+* **`totalAccountValue` (Patrimonio neto total):**
+  $$\text{totalAccountValue} = \text{totalCash} + \sum (\text{marketValue de posiciones})$$
+  El dinero reservado en órdenes límite no se descuenta del patrimonio hasta que la orden se liquide.
+
+### 2. Concurrencia y Consistencia Transaccional (Sin Redis)
+Para evitar *overdrafts* (sobregiros de saldo) y carreras concurrentes (*check-then-act* write skew):
+* Cada orden abre una transacción de base de datos que ejecuta de inmediato un **bloqueo pesimista a nivel de fila sobre el usuario**:
+  ```sql
+  SELECT * FROM users WHERE id = ? FOR UPDATE;
+  ```
+* **Por qué en PostgreSQL y no en Redis:** Introducir locks distribuidos en Redis agrega riesgo de *split-brain*, complejidad de red y desincronización con el motor relacional. PostgreSQL garantiza serialización atómica (ACID) por usuario en milisegundos sin generar contención entre usuarios distintos.
+
+### 3. Idempotencia Estricta a Nivel Financiero
+El endpoint de creación de órdenes acepta el header opcional `Idempotency-Key`:
+* **Validación de formato:** Rechaza claves vacías, en blanco o malformadas mediante regex (`^[a-zA-Z0-9_-]{1,64}$`), devolviendo `400 Bad Request`.
+* **Detección de colisión / Mismatch de intención:** Si un cliente reintenta la misma clave pero con un payload diferente (por ejemplo, cambiando el `side` de BUY a SELL, o alterando el instrumento), la API lo detecta y rechaza con `400 Bad Request` en vez de procesar una orden equivocada.
+* **Replay idéntico:** Si la orden ya fue procesada, responde con la orden existente de inmediato (`200 OK` o `201 Created`), garantizando que problemas de red no dupliquen transacciones.
+
+### 4. Rechazo de Órdenes como Evento de Negocio
+* Si una orden no cumple con fondos suficientes o acciones disponibles, **se persiste en base de datos con estado `REJECTED`** (con su motivo detallado) y responde `200 OK` con metadata de rechazo.
+* Esto preserva la trazabilidad y auditoría requerida por normativas financieras. Los errores HTTP `4xx` quedan reservados exclusivamente para fallos de transporte, sintaxis o reglas estructurales de la petición.
+
+### 5. Cálculo de Acciones por Monto (`amount`)
+Cuando el usuario envía un monto a invertir en lugar de cantidad de acciones, se calcula el número entero máximo permitido:
+$$\text{size} = \left\lfloor \frac{\text{amount}}{\text{price}} \right\rfloor$$
+No se permiten fracciones de acciones. Si el monto enviado no alcanza para adquirir al menos 1 acción completa al precio de mercado, la orden se rechaza y se persiste en estado `REJECTED`.
+
+### 6. Valuación de Posiciones y Rendimientos
+* **Filtrado:** Solo las órdenes `FILLED` en activos de tipo `ACCIONES` componen las tenencias (el `ARS` es un instrumento `MONEDA` que representa el efectivo).
+* **Precio Promedio Ponderado (PPP):** Las compras calculan el costo medio de adquisición. Las ventas reducen la tenencia sin alterar el precio promedio de compra.
+* **Rendimiento Diario (`dailyReturnPercent`):** Variación intrínseca del activo frente al día anterior:
+  $$\text{dailyReturnPercent} = \frac{\text{close} - \text{previousClose}}{\text{previousClose}} \times 100$$
+* **Rendimiento Total (`totalReturnPercent`):** Rendimiento acumulado de la posición del usuario frente a su costo promedio:
+  $$\text{totalReturnPercent} = \frac{\text{marketPrice} - \text{averageCost}}{\text{averageCost}} \times 100$$
+* Todos los cálculos monetarios usan `BigDecimal` con escala y redondeo bancario (`RoundingMode.HALF_EVEN`).
+
+---
+
+## Referencia de la API
+
+### 1. Portfolio de Usuario
+```http
+GET /api/v1/portfolio/{userId}
+GET /api/v1/portfolio?userId={userId}
+```
+**Respuesta (`200 OK`):**
+```json
+{
+  "userId": 1,
+  "accountNumber": "10001",
+  "totalAccountValue": 904784.00,
+  "availableCash": 654161.00,
+  "totalCash": 678592.80,
+  "positions": [
+    {
+      "instrumentId": 34,
+      "ticker": "GGAL",
+      "name": "Grupo Financiero Galicia",
+      "size": 84,
+      "marketPrice": 885.80,
+      "marketValue": 74407.20,
+      "dailyReturnPercent": -3.48,
+      "totalReturnPercent": 0.00
+    }
+  ]
+}
+```
+
+### 2. Búsqueda de Instrumentos
+Soporta búsqueda por subcadena (*contains*) tanto por ticker como por nombre, case-insensitive y paginada.
+```http
+GET /api/v1/instruments?query=gal&page=0&size=10
+```
+
+### 3. Envío de Órdenes
+```http
+POST /api/v1/orders
+Content-Type: application/json
+Idempotency-Key: 7b8c2d1e-9f3a-4b5c-8d1e-2f3a4b5c6d7e
+```
+* **MARKET por cantidad (`size`):**
+  ```json
+  { "userId": 1, "ticker": "GGAL", "side": "BUY", "type": "MARKET", "size": 10 }
+  ```
+* **MARKET por monto en pesos (`amount`):**
+  ```json
+  { "userId": 1, "instrumentId": 34, "side": "BUY", "type": "MARKET", "amount": 50000.00 }
+  ```
+* **LIMIT (requiere `price` límite):**
+  ```json
+  { "userId": 1, "ticker": "PAMP", "side": "BUY", "type": "LIMIT", "size": 5, "price": 920.00 }
+  ```
+
+### 4. Cancelación de Órdenes
+Solo aplicable a órdenes con estado `NEW`.
+```http
+POST /api/v1/orders/{orderId}/cancel
+```
+* Si la orden ya está `FILLED` o `CANCELLED`: Retorna `422 Unprocessable Entity`.
+* Si no existe: Retorna `404 Not Found`.
+
+---
+
+## Observabilidad y Trazabilidad
+
+El proyecto implementa observabilidad como ciudadano de primera clase:
+
+1. **Inyección de `X-Trace-Id`:** El filtro `MdcTraceIdFilter` genera un identificador hexadecimal único de 16 caracteres por solicitud, lo inyecta en el `MDC` de SLF4J y lo retorna en los headers HTTP de respuesta.
+2. **Logs Estructurados por Contexto:**
+   ```text
+   2026-10-06 03:41:53.193 [http-nio-8080-exec-7] [traceId=01bd038fbcc14734] INFO  ... - [HTTP] [REQUEST] method=POST path=/api/v1/orders
+   2026-10-06 03:41:53.201 [http-nio-8080-exec-7] [traceId=01bd038fbcc14734] INFO  ... - [TRADING] [ORDER_SUBMITTED] userId=1 ticker=CAPX side=BUY type=MARKET size=1 price=1865.00 ARS
+   2026-10-06 03:41:53.209 [http-nio-8080-exec-7] [traceId=01bd038fbcc14734] INFO  ... - [TRADING] [ORDER_FILLED] orderId=53 userId=1 ticker=CAPX side=BUY size=1 price=1865.00 ARS
+   2026-10-06 03:41:53.214 [http-nio-8080-exec-7] [traceId=01bd038fbcc14734] INFO  ... - [HTTP] [RESPONSE] method=POST path=/api/v1/orders status=201 durationMs=21ms
+   ```
+   Las etiquetas `[HTTP]`, `[TRADING]`, `[PORTFOLIO]`, `[AUDIT]` y `[EXCEPTION]` permiten filtrado rápido en Grafana/Loki.
+3. **Métricas en Grafana / Prometheus:** Scrapeo de Actuator exponiendo métricas de rendimiento JVM y contadores de negocio.
+
+---
+
+## Testing y Calidad
+
+La suite cubre pruebas unitarias de dominio, calculadora contable, validaciones web y pruebas funcionales de integración con base de datos real:
 
 ```bash
 mvn test
 ```
 
----
-
-## Observabilidad
-
-El stack incluye monitoreo y agregación de logs centralizado, preconfigurado en Grafana (`http://localhost:3000`, credenciales `admin` / `admin`):
-
-- **Métricas de Sistema (Prometheus + Actuator):** Monitoreo continuo de memoria JVM, tasas de peticiones HTTP y tiempos de respuesta.
-- **Métricas de Negocio (PostgreSQL):** Paneles en tiempo real con total de órdenes, distribución por estado (`NEW`, `FILLED`, `REJECTED`, `CANCELLED`), usuarios e instrumentos.
-- **Logs y Trazabilidad (Loki + Promtail):**
-  - Cada solicitud HTTP genera un `traceId` único propagado en el MDC de SLF4J, incluido en los logs y en las respuestas de error (RFC 7807 `ProblemDetail`).
-  - Los logs registran eventos con etiquetas estructuradas de negocio: `[HTTP]`, `[TRADING]`, `[PORTFOLIO]`, `[MARKET]`, `[AUDIT]`, `[EXCEPTION]`.
-  - El dashboard de Grafana permite filtrar logs dinámicamente mediante el selector `Log Type` (órdenes ejecutadas, órdenes rechazadas, cancelaciones, excepciones, etc.).
-
----
-
-## Ejemplos de Uso (cURL)
-
-### 1. Consultar Cartera
-```bash
-curl -s -X GET "http://localhost:8080/api/v1/portfolio/1"
-```
-
-### 2. Buscar Activo
-```bash
-curl -s -X GET "http://localhost:8080/api/v1/instruments?query=GGAL"
-```
-
-### 3. Enviar Orden MARKET por cantidad
-```bash
-curl -s -X POST "http://localhost:8080/api/v1/orders" \
-     -H "Content-Type: application/json" \
-     -H "Idempotency-Key: 11111111-2222-3333-4444-555555555555" \
-     -d '{"userId": 1, "ticker": "GGAL", "side": "BUY", "type": "MARKET", "size": 10}'
-```
-
-### 4. Enviar Orden MARKET por monto en pesos
-```bash
-curl -s -X POST "http://localhost:8080/api/v1/orders" \
-     -H "Content-Type: application/json" \
-     -d '{"userId": 1, "ticker": "GGAL", "side": "BUY", "type": "MARKET", "amount": 50000}'
-```
-
-### 5. Enviar Orden LIMIT
-```bash
-curl -s -X POST "http://localhost:8080/api/v1/orders" \
-     -H "Content-Type: application/json" \
-     -d '{"userId": 1, "ticker": "PAMP", "side": "BUY", "type": "LIMIT", "size": 5, "price": 900.00}'
-```
-
-### 6. Cancelar Orden NEW
-```bash
-curl -s -X POST "http://localhost:8080/api/v1/orders/{orderId}/cancel"
-```
-
----
-
-## Colección Postman y Requests HTTP
-
-En el directorio `postman/` se encuentran disponibles para pruebas:
-- `Cocos-Challenge-API.postman_collection.json`: Colección completa lista para importar en Postman.
-- `requests.http`: Archivo para ejecutar peticiones directamente desde el editor (IntelliJ HTTP Client o extensión REST Client en VS Code).
-
+* **Total:** 67 tests automatizados ejecutados al 100% de éxito.
+* **Colección Postman y HTTP Client:** En la carpeta [`postman/`](postman/) se incluye la colección `Cocos-Challenge-API.postman_collection.json` y el archivo ejecutable [`requests.http`](postman/requests.http) para pruebas directas.

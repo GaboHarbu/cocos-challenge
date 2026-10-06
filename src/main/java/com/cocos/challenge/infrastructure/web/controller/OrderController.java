@@ -43,6 +43,10 @@ public class OrderController {
     /**
      * Cancel an order in NEW status.
      * POST /api/v1/orders/{orderId}/cancel
+     *
+     * In a production multi-tenant brokerage, user ownership would be verified via the authenticated
+     * caller principal (SecurityContext / JWT). Per challenge specifications, user authentication
+     * is explicitly out of scope.
      */
     @PostMapping("/{orderId}/cancel")
     public ResponseEntity<OrderResponse> cancelOrder(@PathVariable("orderId") Long orderId) {

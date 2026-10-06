@@ -48,30 +48,27 @@ public class PortfolioService {
         var user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
-        var filledOrders = findFilledOrders(userId);
-        var instruments = getInstrumentsMap(filledOrders);
-        var availableCash = calculateAvailableCash(filledOrders, instruments);
+        var allOrders = orderRepository.findByUserIdOrderByDatetimeAsc(userId);
+        var filledOrders = allOrders.stream().filter(OrderEntity::isFilled).toList();
+        var instruments = getInstrumentsMap(allOrders);
+
+        var totalCash = cashCalculator.calculateAvailableCash(filledOrders, instruments);
+        var availableCash = cashCalculator.calculateAvailableFunds(allOrders);
         var positions = calculatePositions(filledOrders, instruments);
 
         var portfolio = new Portfolio(
                 user.getId(),
                 user.getAccountNumber(),
                 availableCash,
-                availableCash,
+                totalCash,
                 positions);
 
         log.info(
-                "[PORTFOLIO] [VALUATION] userId={} accountNumber={} totalAccountValue={} ARS availableCash={} ARS positionsCount={}",
-                user.getId(), user.getAccountNumber(), portfolio.totalAccountValue(), portfolio.availableCash(),
+                "[PORTFOLIO] [VALUATION] userId={} accountNumber={} totalAccountValue={} ARS availableCash={} ARS totalCash={} ARS positionsCount={}",
+                user.getId(), user.getAccountNumber(), portfolio.totalAccountValue(), portfolio.availableCash(), portfolio.totalCash(),
                 positions.size());
 
         return portfolioMapper.toResponse(portfolio);
-    }
-
-    private List<OrderEntity> findFilledOrders(Long userId) {
-        return orderRepository.findByUserIdOrderByDatetimeAsc(userId).stream()
-                .filter(OrderEntity::isFilled)
-                .toList();
     }
 
     private Map<Long, InstrumentEntity> getInstrumentsMap(List<OrderEntity> orders) {

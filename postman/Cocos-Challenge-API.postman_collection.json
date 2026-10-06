@@ -2,86 +2,227 @@
   "info": {
     "_postman_id": "c88f7be2-2736-4c7b-b8bc-cc31d87e35b1",
     "name": "Cocos Challenge API",
-    "description": "Postman Collection for Cocos Capital Backend Challenge API built with Spring Boot 3 & Hexagonal Architecture",
+    "description": "Colección completa de pruebas para la API de Cocos Capital Backend Challenge.\n\n### Características:\n- Variables de entorno/colección configurables (`baseUrl`, `userId`, `ticker`, etc.).\n- Parámetros de paginación (`page`, `size`, `sort`) documentados con descripciones y valores por defecto.\n- Path variables tipadas (`:userId`, `:orderId`).\n- Header de idempotencia dinámico con `{{$guid}}`.\n- Aserciones automatizadas en JavaScript (`pm.test`) en cada petición.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:8080/api/v1",
-      "type": "string"
+      "type": "string",
+      "description": "URL base de la API REST (versión v1)"
+    },
+    {
+      "key": "actuatorUrl",
+      "value": "http://localhost:8080/actuator",
+      "type": "string",
+      "description": "URL base de Spring Boot Actuator"
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "string",
+      "description": "ID del usuario de prueba existente (Juan Perez)"
+    },
+    {
+      "key": "ticker",
+      "value": "GGAL",
+      "type": "string",
+      "description": "Ticker del activo de prueba (ej. GGAL, PAMP, YPFD, AL30)"
+    },
+    {
+      "key": "orderIdNew",
+      "value": "5",
+      "type": "string",
+      "description": "ID de una orden en estado NEW para cancelar"
+    },
+    {
+      "key": "orderIdFilled",
+      "value": "1",
+      "type": "string",
+      "description": "ID de una orden en estado FILLED (espera 422 al cancelar)"
     }
   ],
   "item": [
     {
-      "name": "Portfolio",
+      "name": "1. Portfolio",
+      "description": "Endpoints para consultar el patrimonio neto, efectivo disponible, efectivo total y detalle de posiciones valorizadas.",
       "item": [
         {
-          "name": "Get Portfolio by Query Param",
+          "name": "Get Portfolio by Query Param (?userId=1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Portfolio contains required financial fields\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('userId');",
+                  "    pm.expect(data).to.have.property('totalAccountValue');",
+                  "    pm.expect(data).to.have.property('availableCash');",
+                  "    pm.expect(data).to.have.property('totalCash');",
+                  "    pm.expect(data).to.have.property('positions');",
+                  "    pm.expect(Array.isArray(data.positions)).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/portfolio?userId=1",
+              "raw": "{{baseUrl}}/portfolio?userId={{userId}}",
               "host": ["{{baseUrl}}"],
               "path": ["portfolio"],
               "query": [
                 {
                   "key": "userId",
-                  "value": "1"
+                  "value": "{{userId}}",
+                  "description": "ID del usuario a consultar (ej. 1)"
                 }
               ]
-            }
+            },
+            "description": "Consulta el portfolio del usuario enviando `userId` como Query Parameter."
           }
         },
         {
-          "name": "Get Portfolio by Path",
+          "name": "Get Portfolio by Path Variable (/portfolio/{userId})",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response matches requested userId\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.userId).to.eql(Number(pm.collectionVariables.get('userId')));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/portfolio/1",
+              "raw": "{{baseUrl}}/portfolio/:userId",
               "host": ["{{baseUrl}}"],
-              "path": ["portfolio", "1"]
-            }
+              "path": ["portfolio", ":userId"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "ID del usuario (Path Variable)"
+                }
+              ]
+            },
+            "description": "Consulta el portfolio del usuario enviando el `userId` en el Path URL."
           }
         }
       ]
     },
     {
-      "name": "Instruments",
+      "name": "2. Instruments",
+      "description": "Búsqueda y listado paginado de instrumentos financieros del mercado (acciones y bonos).",
       "item": [
         {
-          "name": "Search Instruments by Ticker (GGAL)",
+          "name": "Search by Ticker Substring (ej. GGAL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response is paginated page of instruments\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('content');",
+                  "    pm.expect(data).to.have.property('totalElements');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/instruments?query=GGAL&page=0&size=10",
+              "raw": "{{baseUrl}}/instruments?query={{ticker}}&page=0&size=10",
               "host": ["{{baseUrl}}"],
               "path": ["instruments"],
               "query": [
                 {
                   "key": "query",
-                  "value": "GGAL"
+                  "value": "{{ticker}}",
+                  "description": "Texto a buscar (coincidencia parcial en ticker o nombre, case-insensitive)"
                 },
                 {
                   "key": "page",
-                  "value": "0"
+                  "value": "0",
+                  "description": "Número de página (comienza en 0)"
                 },
                 {
                   "key": "size",
-                  "value": "10"
+                  "value": "10",
+                  "description": "Cantidad de resultados por página"
                 }
               ]
-            }
+            },
+            "description": "Busca instrumentos por coincidencia parcial de Ticker (ej. 'GGAL', 'PAM')."
           }
         },
         {
-          "name": "Search Instruments by Name (Galicia)",
+          "name": "Search by Name Substring (ej. Galicia)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Matches contain 'Galicia' in name\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.content.length).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/instruments?query=Galicia&page=0&size=10",
               "host": ["{{baseUrl}}"],
@@ -89,25 +230,51 @@
               "query": [
                 {
                   "key": "query",
-                  "value": "Galicia"
+                  "value": "Galicia",
+                  "description": "Búsqueda por nombre de la empresa/activo (coincidencia parcial)"
                 },
                 {
                   "key": "page",
-                  "value": "0"
+                  "value": "0",
+                  "description": "Número de página (base 0)"
                 },
                 {
                   "key": "size",
-                  "value": "10"
+                  "value": "10",
+                  "description": "Tamaño de la página"
                 }
               ]
-            }
+            },
+            "description": "Búsqueda por nombre comercial del activo (ej. 'Galicia', 'Pampa', 'YPF')."
           }
         },
         {
-          "name": "List All Instruments Paginated",
+          "name": "List All Instruments (Paginated & Sorted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Content list is not empty\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.content.length).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/instruments?page=0&size=20&sort=ticker,asc",
               "host": ["{{baseUrl}}"],
@@ -115,27 +282,51 @@
               "query": [
                 {
                   "key": "page",
-                  "value": "0"
+                  "value": "0",
+                  "description": "Índice de página"
                 },
                 {
                   "key": "size",
-                  "value": "20"
+                  "value": "20",
+                  "description": "Cantidad de elementos a retornar"
                 },
                 {
                   "key": "sort",
-                  "value": "ticker,asc"
+                  "value": "ticker,asc",
+                  "description": "Criterio de orden: campo y dirección (ej. 'ticker,asc' o 'name,desc')"
                 }
               ]
-            }
+            },
+            "description": "Listado paginado de todos los activos sin filtro de búsqueda."
           }
         }
       ]
     },
     {
-      "name": "Orders",
+      "name": "3. Orders",
+      "description": "Endpoints para emisión de órdenes (MARKET, LIMIT, por size o amount) y cancelación.",
       "item": [
         {
           "name": "Send MARKET BUY Order (by size)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200 or 201\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "pm.test(\"Order executed as FILLED\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.status).to.eql('FILLED');",
+                  "    pm.expect(data.side).to.eql('BUY');",
+                  "    pm.expect(data.type).to.eql('MARKET');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -145,22 +336,42 @@
               },
               {
                 "key": "Idempotency-Key",
-                "value": "{{$guid}}"
+                "value": "{{$guid}}",
+                "description": "Clave única generada automáticamente para prevenir duplicados por reintentos de red"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": 1,\n  \"ticker\": \"GGAL\",\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"size\": 10\n}"
+              "raw": "{\n  \"userId\": {{userId}},\n  \"ticker\": \"{{ticker}}\",\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"size\": 10\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/orders",
               "host": ["{{baseUrl}}"],
               "path": ["orders"]
-            }
+            },
+            "description": "Envía una orden MARKET de compra indicando cantidad de acciones (`size`). Se ejecuta inmediatamente al precio de mercado (`FILLED`)."
           }
         },
         {
           "name": "Send LIMIT BUY Order (by size & limit price)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200 or 201\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "pm.test(\"Limit order created in NEW state\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.status).to.eql('NEW');",
+                  "    pm.expect(data.type).to.eql('LIMIT');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -170,22 +381,42 @@
               },
               {
                 "key": "Idempotency-Key",
-                "value": "{{$guid}}"
+                "value": "{{$guid}}",
+                "description": "UUID v4 dinámico de idempotencia"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": 1,\n  \"ticker\": \"GGAL\",\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"price\": 850.00,\n  \"size\": 5\n}"
+              "raw": "{\n  \"userId\": {{userId}},\n  \"ticker\": \"{{ticker}}\",\n  \"side\": \"BUY\",\n  \"type\": \"LIMIT\",\n  \"price\": 850.00,\n  \"size\": 5\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/orders",
               "host": ["{{baseUrl}}"],
               "path": ["orders"]
-            }
+            },
+            "description": "Envía una orden LIMIT con precio límite inferior al de mercado. Queda registrada en estado `NEW` y reserva efectivo en el `availableCash` del usuario."
           }
         },
         {
           "name": "Send MARKET BUY Order (by Amount in ARS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200 or 201\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "pm.test(\"Order size calculated without fractions\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.size).to.be.above(0);",
+                  "    pm.expect(Number.isInteger(data.size)).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -195,22 +426,42 @@
               },
               {
                 "key": "Idempotency-Key",
-                "value": "{{$guid}}"
+                "value": "{{$guid}}",
+                "description": "UUID v4 dinámico de idempotencia"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": 1,\n  \"ticker\": \"GGAL\",\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": 5000.00\n}"
+              "raw": "{\n  \"userId\": {{userId}},\n  \"ticker\": \"{{ticker}}\",\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"amount\": 5000.00\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/orders",
               "host": ["{{baseUrl}}"],
               "path": ["orders"]
-            }
+            },
+            "description": "Envía una orden indicando monto a invertir en ARS (`amount`). El backend calcula el número entero máximo de acciones: size = floor(amount / price)."
           }
         },
         {
-          "name": "Send Order Insufficient Funds (REJECTED)",
+          "name": "Send Order Insufficient Funds (Business REJECTED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200 OK (Audited Business Event)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Order status is REJECTED with description\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.status).to.eql('REJECTED');",
+                  "    pm.expect(data.description).to.not.be.empty;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -220,61 +471,171 @@
               },
               {
                 "key": "Idempotency-Key",
-                "value": "{{$guid}}"
+                "value": "{{$guid}}",
+                "description": "UUID v4 dinámico de idempotencia"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": 1,\n  \"ticker\": \"GGAL\",\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"size\": 999999\n}"
+              "raw": "{\n  \"userId\": {{userId}},\n  \"ticker\": \"{{ticker}}\",\n  \"side\": \"BUY\",\n  \"type\": \"MARKET\",\n  \"size\": 999999\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/orders",
               "host": ["{{baseUrl}}"],
               "path": ["orders"]
-            }
+            },
+            "description": "Prueba de fondos insuficientes: el backend persiste la orden con estado `REJECTED` para auditoría y trazabilidad financiera y devuelve `200 OK` con metadata de rechazo."
           }
         },
         {
-          "name": "Cancel Order (status NEW)",
+          "name": "Cancel Order in State NEW",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Order transitioned to CANCELLED\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.status).to.eql('CANCELLED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/orders/5/cancel",
+              "raw": "{{baseUrl}}/orders/:orderId/cancel",
               "host": ["{{baseUrl}}"],
-              "path": ["orders", "5", "cancel"]
-            }
+              "path": ["orders", ":orderId", "cancel"],
+              "variable": [
+                {
+                  "key": "orderId",
+                  "value": "{{orderIdNew}}",
+                  "description": "ID de una orden en estado NEW a cancelar (ej. 5)"
+                }
+              ]
+            },
+            "description": "Cancela una orden activa en estado `NEW` y libera el efectivo reservado."
           }
         },
         {
-          "name": "Cancel Order (status FILLED - Expects 422)",
+          "name": "Cancel Order Already FILLED (Expects 422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 422 Unprocessable Entity\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "pm.test(\"RFC 7807 Problem Detail returned\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('status');",
+                  "    pm.expect(data.status).to.eql(422);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/orders/1/cancel",
+              "raw": "{{baseUrl}}/orders/:orderId/cancel",
               "host": ["{{baseUrl}}"],
-              "path": ["orders", "1", "cancel"]
-            }
+              "path": ["orders", ":orderId", "cancel"],
+              "variable": [
+                {
+                  "key": "orderId",
+                  "value": "{{orderIdFilled}}",
+                  "description": "ID de una orden ya ejecutada (FILLED), por ej. 1"
+                }
+              ]
+            },
+            "description": "Intenta cancelar una orden que ya está en estado `FILLED`. Retorna `422 Unprocessable Entity` cumpliendo la especificación RFC 7807 (Problem Detail)."
           }
         }
       ]
     },
     {
-      "name": "Actuator",
+      "name": "4. Observability & Health",
+      "description": "Endpoints de Spring Boot Actuator para verificación de salud y métricas.",
       "item": [
         {
-          "name": "Health Check",
+          "name": "Health Check (/actuator/health)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Application status is UP\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.status).to.eql('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "http://localhost:8080/actuator/health",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["actuator", "health"]
+              "raw": "{{actuatorUrl}}/health",
+              "host": ["{{actuatorUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica que el servicio y la conexión a la base de datos PostgreSQL se encuentren operativos (`UP`)."
+          }
+        },
+        {
+          "name": "List Available Metrics (/actuator/metrics)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Metrics names list is available\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('names');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
             }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{actuatorUrl}}/metrics",
+              "host": ["{{actuatorUrl}}"],
+              "path": ["metrics"]
+            },
+            "description": "Lista el catálogo de métricas de JVM y negocio expuestas para Prometheus."
           }
         }
       ]

@@ -81,7 +81,7 @@ class PortfolioServiceTest {
         orders.add(new OrderEntity(2L, 106L, 1L, 100, BigDecimal.valueOf(500.00), "MARKET", "BUY", "FILLED", LocalDateTime.now(), null));
         // 3. CASH_OUT 10,000 ARS (FILLED)
         orders.add(new OrderEntity(3L, 66L, 1L, 10000, BigDecimal.ONE, "MARKET", "CASH_OUT", "FILLED", LocalDateTime.now(), null));
-        // 4. Pending LIMIT BUY (NEW) -> should be ignored since only FILLED are considered
+        // 4. Pending LIMIT BUY (NEW): 50 shares @ $480 = $24,000 committed reserves
         orders.add(new OrderEntity(4L, 106L, 1L, 50, BigDecimal.valueOf(480.00), "LIMIT", "BUY", "NEW", LocalDateTime.now(), null));
 
         when(orderRepository.findByUserIdOrderByDatetimeAsc(1L)).thenReturn(orders);
@@ -98,10 +98,13 @@ class PortfolioServiceTest {
         assertEquals(1L, response.userId());
         assertEquals("10001", response.accountNumber());
 
-        // Cash: 1,000,000 (CASH_IN) - 50,000 (BUY) - 10,000 (CASH_OUT) = 940,000.00
-        assertEquals(BigDecimal.valueOf(940000.00).setScale(2), response.availableCash());
+        // Settled Total Cash: 1,000,000 (CASH_IN) - 50,000 (BUY) - 10,000 (CASH_OUT) = 940,000.00
+        assertEquals(BigDecimal.valueOf(940000.00).setScale(2), response.totalCash());
 
-        // Positions: 100 PAMP
+        // Available Cash (purchasing power): 940,000.00 - 24,000.00 (committed BUY order) = 916,000.00
+        assertEquals(BigDecimal.valueOf(916000.00).setScale(2), response.availableCash());
+
+        // Positions: 100 PAMP (FILLED only)
         assertFalse(response.positions().isEmpty());
         assertEquals(1, response.positions().size());
         PositionResponse position = response.positions().get(0);
@@ -113,7 +116,7 @@ class PortfolioServiceTest {
         assertEquals(BigDecimal.valueOf(10.00).setScale(2), position.dailyReturnPercent());
         assertEquals(BigDecimal.valueOf(10.00).setScale(2), position.totalReturnPercent());
 
-        // Total account value: 940,000 (cash) + 55,000 (positions) = 995,000.00
+        // Total account value: 940,000 (settled total cash) + 55,000 (positions) = 995,000.00
         assertEquals(BigDecimal.valueOf(995000.00).setScale(2), response.totalAccountValue());
     }
 }
